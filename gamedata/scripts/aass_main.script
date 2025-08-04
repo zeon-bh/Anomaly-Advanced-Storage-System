@@ -1,0 +1,138 @@
+[[-- 
+    Anomaly Advanced Storage System (AASS)
+    Author: Z30n_bh
+    Date: 08-02-2025
+--]]
+
+-- IMPORTANT
+-- i_quest type should not be added to aass as it can break or fail missions
+-- i_quest items will be stored in the container as is, as a game object instead of an AASSItem
+
+local aass_debug = true
+function aass_debug(string,...)
+    if aass_debug then
+        printf("AASS | %s | " .. string, time_global(), ...)
+    end
+end
+
+-- Player created aass stashes
+aass_stashes = {}
+
+-- Item VID Ranges
+
+-- Placeholder
+local aass_vid_range = {
+    ["weapons"] = {
+        kind = { "w_sniper", "w_rifle", "w_smg", "w_shotgun", "w_pistol", "w_melee", "w_misc", "w_base" }
+        vid_start = 100000,
+        vid_end = 199999
+    },
+    ["outfits"] = {
+        kind = { "o_heavy", "o_sci", "o_medium", "o_light", "o_helmet" }
+        vid_start = 200000,
+        vid_end = 299999
+    },
+    ["ammo"] = {
+        kind = { "w_ammo", "w_explosive" }
+        vid_start = 300000,
+        vid_end = 399999
+    },
+    ["trophies"] = {
+        kind = { "i_arty", "i_arty_junk", "i_arty_cont", "i_mutant_part", "i_mutant_belt" }
+        vid_start = 400000,
+        vid_end = 499999
+    },
+    ["devices"] = {
+        kind = { "i_tool", "i_repair", "i_kit" }
+        vid_start = 500000,
+        vid_end = 599999
+    },
+    ["consumables"] = {
+        kind = { "i_mutant_raw", "i_mutant_cooked", "i_food", "i_drink" }
+        vid_start = 600000,
+        vid_end = 699999
+    },
+    ["medical"] = {
+        kind = { "i_medical" }
+        vid_start = 700000,
+        vid_end = 799999
+    },
+    ["upgrades"] = {
+        kind = { "i_upgrade" }
+        vid_start = 800000,
+        vid_end = 899999
+    },
+    ["misc"] = { -- Also Contains items with no specific kind assigned
+        kind = { "i_letter", "i_misc", "i_part" }
+        vid_start = 900000,
+        vid_end = 999999
+    }
+}
+
+function return
+
+-- Select the right category
+
+-- Create a table entry for newly created player stash, stash_name will be used for RAT
+function create_aass_stash_entry(box_id, stash_name)
+    return { 
+        aass_id = box_id ,
+        aass_name = stash_name,
+        aass_data = {} -- Split into different categories, each categories have different ID Range, improves performance
+    }
+end
+
+
+
+function on_game_start()
+    printf(start)
+end
+
+
+function init_aass()
+    
+end
+
+[[--
+AASS Data structure
+
+Entry for each item will be stored in a table with key as the vid of that particular item
+vid will be generated randomaly and with additional unique number check
+aass_data = {
+    vid = 75432 -- Virtual aass item ID to store items in database, generated randomly and only above > 70000 to not conflict with base ID numbers
+
+}
+
+--]]
+
+
+--- VID Generator and Reuse pools
+
+local aass_vid_pool = {} -- Stores Recycled ID's
+
+function generate_aass_vid()
+    local start_vid = 70000 -- Keep the vid range well outside the base object ID pool 0 - 65535
+    local end_vid = 1000000000
+
+    if not aass_vid_pool then
+        --math.randomseed(time_global()) -- Seed with engine game time
+        local vid_taken = true
+        local new_vid
+
+        while vid_taken do
+            new_vid = math.random(start_vid,end_vid)
+            -- Change this to a anonymous function
+            check_vid = function ()
+                for _,stash in ipairs(aass_stashes) do
+                    if not stash.aass_data[new_vid] then -- check if new_vid already taken
+                        return
+                    else
+                        new_vid = math.random(start_vid,end_vid) -- regenerate new vid
+                    end
+                end
+            end
+        end
+    else
+        return table.remove(aass_vid_pool,1) -- pop the first entry from used ID pool
+    end
+end
