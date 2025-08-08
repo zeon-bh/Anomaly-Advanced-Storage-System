@@ -1,18 +1,19 @@
-[[-- 
-    Monkey Patches for ui_inventory and utils_item
-    Author: Z30n_bh
-    Date: 08-06-2025
---]]
+--- Monkey Patches for ui_inventory and utils_item
+--- Author: Z30n_bh
+--- Date: 08-06-2025
 
 --------------------------------------------------------------------------------
 --- AASS Init Intercept when starting Loot Mode, Enable AASS_MODE
 --------------------------------------------------------------------------------
 
+local snd_open         = sound_object([[interface\inv_open]])
+local snd_close        = sound_object([[interface\inv_close]])
+
 function ui_inventory.UIInventory:LMode_Init(obj)
 	self:Print(nil, "LMode_Init | obj: %s", obj and obj:name())
 
 	-- Enable AASS only when opening player created stashes
-	if is_aass(obj:id()) then 
+	if aass_main.is_aass(obj:id()) then 
 		aass_main.aass_debug("AASS Stash found, Enabling AASS Mode...")
 		AASS_MODE = true 
 	end
@@ -53,7 +54,8 @@ local orig_ParseInventory = ui_inventory.UIInventory.ParseInventory
 function ui_inventory.UIInventory:ParseInventory(npc, all, id_list, ignore_kind)
 
 	-- Check to make sure npc is a box and is an aass stash
-	if npc and self.npc_is_box and AASS_MODE and aass_main.is_aass(box_id) then
+	if npc and self.npc_is_box and AASS_MODE and aass_main.is_aass(npc:id()) then
+		aass_main.aass_debug("Starting inventory parsing...")
 		local inv = {}
 		local size_c = 0
 		local pkind = self.possible_kind
@@ -85,6 +87,7 @@ function ui_inventory.UIInventory:ParseInventory(npc, all, id_list, ignore_kind)
 			npc:iterate_inventory_box(iterate,nil)
 
 			-- AASS Intercept when opening player created stash
+			aass_main.aass_debug("Generating AASS objects from table data...")
 			local box_id = npc:id()
 			local aass_stash_items = aass_main.parse_aass_items(box_id)
 			size_c = 0
@@ -99,7 +102,7 @@ function ui_inventory.UIInventory:ParseInventory(npc, all, id_list, ignore_kind)
 		end
 		return inv
 	else
-		return orig_ParseInventory(npc, all, id_list, ignore_kind)
+		return orig_ParseInventory(self, npc, all, id_list, ignore_kind)
 	end
 end
 
@@ -116,7 +119,7 @@ function ui_inventory.UIInventory:Close()
 	self:HideDialog()
 	self:Show(false)
 	
-	change_last_mode(0)
+	ui_inventory.change_last_mode(0)
 
 	-- Disable AASS Mode
 	if AASS_MODE then 
@@ -135,7 +138,7 @@ end
 
 local orig_object_by_id = level.object_by_id
 function level.object_by_id(id)
-	if AASS_MODE and aass_main.is_aass_obj(id) then
+	if AASS_MODE and aass_main.is_aass_item(id) then
 		return aass_main.create_aass_from_id(id)
 	end
 
