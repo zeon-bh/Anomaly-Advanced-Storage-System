@@ -12,6 +12,7 @@ function AASSItem:__init(vid,item_data)
     -- AASSItem should also integrate other mods that display custom icons like WPO, Icon improvement Mods, Etc
     -- AASSItem will only suppport move feature for now, will integrate dissassemble, weapon attachments and other features later on
     self.id = vid
+    self.clsid = item_data.clsid
     self.section = item_data.section
     self.condition = item_data.condition or nil
     self.installed_upgrades = item_data.install_upgrades or nil
@@ -43,7 +44,8 @@ function AASSItem:condition()
 end
 
 function AASSItem:clsid()
-    return SYS_GetParam(0, self.section, "class")
+    --return SYS_GetParam(0, self.section, "class")
+    return self.clsid
 end
 
 -- For multiuse items store the remaining uses in database

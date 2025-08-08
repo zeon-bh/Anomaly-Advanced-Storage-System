@@ -4,7 +4,10 @@
     Date: 08-02-2025
 --]]
 
--- Player created aass stashes
+AASS_MODE = false
+local AASSItem = aass_item.AASSItem
+
+-- List Player created AASS stashes
 aass_stashes = {}
 
 local aass_debug = true
@@ -24,110 +27,117 @@ function create_aass_stash_entry(stash_name)
 end
 
 
--- AASS --
-function on_game_start()
-    RegisterScriptCallback("actor_on_stash_create", add_stash_to_aass)
-    RegisterScriptCallback("actor_on_stash_remove", remove_stash_from_aass)
-end
+--------------------------------------------------------------------------------
+--- Anomaly Advanced Storage System (AASS)
+--------------------------------------------------------------------------------
 
 -- Check if stash is player owned which loads aass
 function is_aass(box_id)
-    return aass_stashes[box_id] or false
+    return aass_stashes[box_id]
+end
+
+function is_aass_obj(obj)
+    -- All AASSItem object have ID range above 100000, well outside vanilla object ID range
+    if obj and (obj:id() >= 100000 and obj:id() <= 1900000)  then return true end
 end
 
 -- Converts saved table data to AASSItem objects
-function generate_aass_items(box_id)
-    local aass_stash_data = aass_stashes[box_id]
+function parse_aass_items(box_id)
+    local aass_stash_data = aass_stashes[box_id].aass_data
     local aass_inv = {}
 
     for vid, item_data in pairs(aass_stash_data) do
-        aass_inv[vid] = aass_item.AASSItem(vid,item_data)
+        aass_inv[vid] = AASSItem(vid,item_data)
     end
 
     return aass_inv
 end
 
--- Manage Player Created Stashes and create new entry in aass_data
-function add_stash_to_aass()
-    -- Load saved player created stashes
-    local m_data = alife_storage_manager.get_state()
-
-    for stash_id, section in pairs(m_data.player_created_stashes) do
-        if not aass_stashes[stash_id] then
-            -- Placehlolder Name
-            local stash_name = section .. stash_id
-            aass_debug("New Stash Added = %s | ID = %d", stash_name,stash_id)
-            aass_stashes[stash_id] = create_aass_stash_entry(stash_name)
-        end
+-- Create an AASSItem object from a given vid, check should be made before passing valid vid
+function create_aass_from_id(aass_vid)
+    local item_data
+    for box_id, aass_entry in pairs(aass_stashes) do
+        item_data = aass_entry.aass_data[aass_vid]
+        if item_data then break end
     end
-end
 
-function remove_stash_from_aass()
-    local m_data = alife_storage_manager.get_state()
-
-    for stash_id, stash_data in pairs(aass_stashes) do
-        if not m_data.player_created_stashes[stash_id] then
-            aass_debug("Removing Stash = %s | ID = %d", stash_data.aass_name,stash_id)
-            aass_stashes[stash_id] = nil
-        end
+    if not item_data then
+        aass_debug("Item entry for AASS VID = %d not found!!!")
+        return
     end
+
+    return AASSItem(aass_vid,item_data)
 end
 
 
-local aass_vid_category = {
+
+--------------------------------------------------------------------------------
+--- AASS Category - Create Entry and Spawn Item definitions
+--------------------------------------------------------------------------------
+
+local aass_category = {
     ["weapons"] = {
         kind = { "w_sniper", "w_rifle", "w_smg", "w_shotgun", "w_pistol", "w_melee", "w_misc", "w_explosive", "w_base" }
         vid_start = 100000,
         vid_end = 199999,
-        create_entry = create_weapon_aass_entry
+        create_entry = create_weapon_aass_entry,
+        spawn_item = spawn_weapon_from_aass
     },
     ["outfits"] = {
         kind = { "o_light", "o_medium", "o_heavy",  "o_sci", "o_helmet" }
         vid_start = 200000,
         vid_end = 299999,
-        create_entry = create_outfit_aass_entry
+        create_entry = create_outfit_aass_entry,
+        spawn_item = spawn_outfit_from_aass
     },
     ["ammo"] = {
         kind = { "w_ammo" }
         vid_start = 300000,
         vid_end = 399999,
-        create_entry = create_ammo_aass_entry
+        create_entry = create_ammo_aass_entry,
+        spawn_item = spawn_ammo_from_aass
     },
     ["trophies"] = {
         kind = { "i_arty", "i_arty_junk", "i_arty_cont", "i_mutant_part", "i_mutant_belt" }
         vid_start = 400000,
         vid_end = 499999,
-        create_entry = create_trophies_aass_entry
+        create_entry = create_trophies_aass_entry,
+        spawn_item = spawn_trophies_from_aass
     },
     ["devices"] = {
         kind = { "i_tool", "i_repair", "i_kit" }
         vid_start = 500000,
         vid_end = 599999,
-        create_entry = create_devices_aass_entry
+        create_entry = create_devices_aass_entry,
+        spawn_item = spawn_devices_from_aass
     },
     ["consumables"] = {
         kind = { "i_mutant_raw", "i_mutant_cooked", "i_food", "i_drink" }
         vid_start = 600000,
         vid_end = 699999,
-        create_entry = create_multi_aass_entry
+        create_entry = create_multi_aass_entry,
+        spawn_item = spawn_multi_from_aass
     },
     ["medical"] = {
         kind = { "i_medical" }
         vid_start = 700000,
         vid_end = 799999,
-        create_entry = create_multi_aass_entry
+        create_entry = create_multi_aass_entry,
+        spawn_item = spawn_multi_from_aass
     },
     ["upgrades"] = {
         kind = { "i_upgrade" }
         vid_start = 800000,
         vid_end = 899999,
-        create_entry = create_multi_aass_entry
+        create_entry = create_multi_aass_entry,
+        spawn_item = spawn_multi_from_aass
     },
     ["misc"] = { -- Also Contains items with no specific kind assigned
         kind = { "i_letter", "i_misc", "i_part" }
         vid_start = 900000,
         vid_end = 1900000, -- Extended range for misc as there can be a lot of items in this category
-        create_entry = create_misc_aass_entry
+        create_entry = create_misc_aass_entry,
+        spawn_item = spawn_misc_aass_entry
     }
 }
 
@@ -135,24 +145,24 @@ local aass_vid_category = {
 --- Creating Item entry for items based on category
 function create_weapon_aass_entry(game_obj)
     local item_kind = SYS_GetParam(0, game_obj:section(), "kind")
-    local weapon_table = {}
 
     if item_kind == "w_melee" then
-        return {section = game_obj:section(), condition = game_obj:condition()}
+        return {section = game_obj:section(), clsid = game_obj:clsid(), condition = game_obj:condition()}
     end
 
     if item_kind = "w_misc" or item_kind == "w_explosive" then -- For Scopes, silencers, grenade launchers, Explosives and Tactical Kits
-        return {section = game_obj:section()}
+        return {section = game_obj:section(), clsid = game_obj:clsid()}
     end
 
     -- Placeholder, still not sure what w_base does
     if item_kind = "w_base" then
-        return {section = game_obj:section()}
+        return {section = game_obj:section(), clsid = game_obj:clsid()}
     end
 
     -- For Weapons
     local section = game_obj:section()
     local condition = game_obj:condition()
+    local clsid = game_obj:clsid()
     local installed_upgrades = utils_item.get_upgrades_installed(game_obj, nil, false)
 
     -- Check if weapon has attachments
@@ -170,22 +180,22 @@ function create_outfit_aass_entry(game_obj)
     local condition = game_obj:condition()
     local installed_upgrades = utils_item.get_upgrades_installed(game_obj, nil, false)
 
-    return {section, condition, installed_upgrades, misc_props = {}}
+    return {section, clsid, condition, installed_upgrades, misc_props = {}}
 end
 
 function create_ammo_aass_entry(game_obj)
-    return {section = game_obj:section(), amount = game_obj:ammo_get_count()}
+    return {section = game_obj:section(), clsid = game_obj:clsid(), amount = game_obj:ammo_get_count()}
 end
 
 function create_trophies_aass_entry(game_obj)
     -- Contains Artifacts, pelts and containers
-    return {section = game_obj:section(), condition = game_obj:condition()}
+    return {section = game_obj:section(), clsid = game_obj:clsid(), condition = game_obj:condition()}
 end
 
 function create_devices_aass_entry(game_obj)
     -- Check if item is multi-use or condition dependent
     local use_condition = SYS_GetParam(1, game_obj:section(), "use_condition") or false
-    local devices_entry = {section = game_obj:section()}
+    local devices_entry = {section = game_obj:section(), clsid = game_obj:clsid()}
 
     if use_condition then
         table.insert(devices_entry, condition = game_obj:condition())
@@ -198,15 +208,146 @@ end
 
 -- General entry for all items that are multi-uses with no special properties
 function create_multi_aass_entry(game_obj)
-    return {section = game_obj:section(), remaining_uses = game_obj:get_remaining_uses()}
+    return {section = game_obj:section(), clsid = game_obj:clsid(), remaining_uses = game_obj:get_remaining_uses()}
 end
 
 -- PLACEHOLDER function for misc items, these items range from simple scrap metal to other mod added items
 -- Items may have custom functors, need to account for that
 -- This is also the default entry for items with unkown kind
 function create_misc_aass_entry(game_obj)
-    return {section = game_obj:section(), condition = game_obj:condition(), misc_props = {}}
+    return {section = game_obj:section(), clsid = game_obj:clsid(), condition = game_obj:condition(), misc_props = {}}
 end
+
+--- Spawn New Item object from AASS ---
+
+-- Set Weapon conditon and upgrades depending on the kind of weapon
+function spawn_weapon_from_aass(aass_obj)
+    local item_kind = SYS_GetParam(0, aass_obj:section(), "kind")
+
+    if item_kind = "w_misc" or item_kind == "w_explosive" or item_kind = "w_base" then
+        return alife_create_item(aass_obj:section())
+    end
+
+    if item_kind == "w_melee" then
+        local condition = aass_obj.condition
+        return alife_create_item(aass_obj:section(), db.actor, {
+            ["cond"] = condition
+        })
+    end
+
+    -- For Weapons
+    local condition = aass_obj.condition
+    local installed_upgrades = aass_obj.installed_upgrades
+    local weapon_attachments = aass_obj.weapon_attachments
+
+    local game_obj = alife_create_item(aass_obj:section(), db.actor, {
+        ["cond"] = condition
+    })
+
+    -- Install Upgrades
+    for _, upgr_section in ipairs(installed_upgrades) do
+        game_obj:install_upgrade(upgr_section)
+    end
+
+    -- Install Attachments
+    -- game_obj:weapon_addon_attach(addon)
+    -- Here addon is an object, so weapon attachments need to be saved first in aass_entry
+    -- For now just a placeholder for testing
+    -- ADD ATTACHMENT SUPPORT!!!
+
+    return game_obj
+end
+
+-- Set Outfit conditon and upgrades
+function spawn_outfit_from_aass(aass_obj)
+    local condition = aass_obj.condition
+    local installed_upgrades = aass_obj.installed_upgrades
+
+    local game_obj = alife_create_item(aass_obj:section(), db.actor, {
+        ["cond"] = condition
+    })
+    
+    -- Install Upgrades
+    for _, upgr_section in ipairs(installed_upgrades) do
+        game_obj:install_upgrade(upgr_section)
+    end
+
+    return game_obj
+end
+
+-- Create Ammo box from saved amount
+function spawn_ammo_from_aass(aass_obj)
+    local amount = aass_obj.amount
+
+    return alife_create_item(aass_obj:section(), db.actor, {
+        ["ammo"] = amount
+    })
+end
+
+function spawn_trophies_from_aass(aass_obj)
+    local condition = aass_obj.condition
+
+    return alife_create_item(aass_obj:section(), db.actor, {
+        ["cond"] = condition
+    })
+end
+
+function spawn_devices_from_aass(aass_obj)
+    local condition = aass_obj.condition
+    local remaining_uses = aass_obj.remaining_uses
+
+    if condition then
+        return alife_create_item(aass_obj:section(), db.actor, {
+            ["cond"] = condition
+        })
+    else
+        return alife_create_item(aass_obj:section(), db.actor, {
+            ["uses"] = remaining_uses,
+        })
+    end
+end
+
+-- Generic function for multi-uses items with no special props
+function spawn_multi_from_aass(aass_obj)
+    local remaining_uses = aass_obj.remaining_uses
+
+    return alife_create_item(aass_obj:section(), db.actor, {
+        ["uses"] = remaining_uses,
+    })
+end
+
+function spawn_misc_aass_entry(aass_obj)
+    local condition = aass_obj.condition
+
+    return alife_create_item(aass_obj:section(), db.actor, {
+        ["cond"] = condition,
+    })
+end
+
+
+
+-- Create a new entry table in aass_stashes table for an item stored in an aass stash
+function aass_store_new_item(game_obj,aass_stash_id)
+    local cat, _, _ = get_item_category(game_obj)
+    local new_aass_item_vid = generate_aass_vid(game_obj, cat, aass_stash_id)
+    local new_aass_item_data = aass_category[cat].create_entry(game_obj)
+    local aass_stash_data_table = aass_stashes[aass_stash_id].aass_data
+
+    if aass_debug then
+        aass_debug("New AASS item VID = %d",new_aass_item_vid)
+        for key,data in pairs(new_aass_item_data) do
+            aass_debug("%d | %s",new_aass_item_vid, data)
+        end
+    end
+
+    -- Update the stash data by adding the new entry
+    aass_stash_data_table[new_aass_item_vid] = new_aass_item_data
+end
+
+
+--------------------------------------------------------------------------------
+--- Utilities
+--------------------------------------------------------------------------------
 
 --- AASS VID Generator
 -- Generate a unique VID for a new item stored in an aass stash
@@ -242,34 +383,10 @@ function generate_aass_vid(game_obj, cat, stash_id)
     return new_vid
 end
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
---- Utils ---
-
 function get_item_category(game_obj)
     local obj_kind = SYS_GetParam(0, game_obj:section(), "kind") or "NA"
-    local default_start_vid = aass_vid_category["misc"].start_vid
-    local default_end_vid = aass_vid_category["misc"].end_vid
+    local default_start_vid = aass_category["misc"].start_vid
+    local default_end_vid = aass_category["misc"].end_vid
     local default_cat = {"misc", default_start_vid, default_end_vid}
 
     -- Default to misc if kind not defined in config file
@@ -278,7 +395,7 @@ function get_item_category(game_obj)
         return default_cat
     end
 
-    for cat,data in pairs(aass_vid_category) do
+    for cat,data in pairs(aass_category) do
         for _,kind in ipairs(data.kind) do
             if obj_kind == kind then
                 aass_debug("Selected Category for Item = %s | Category = %s , start_vid = %d, end_vid = %d",
@@ -290,4 +407,75 @@ function get_item_category(game_obj)
 
     aass_debug("No Category match for Item = %s , returning default misc category")
     return default_cat
+end
+
+
+
+--------------------------------------------------------------------------------
+--- AASS Callbacks
+--------------------------------------------------------------------------------
+
+function take_item_from_aass_stash(box,aass_obj)
+    if not (box and aass_obj) then return end
+    if is_aass_obj(aass_obj) then
+        aass_debug("Spawning AASS Item = %s | section = %s", aass_obj:name(), aass_obj:section())
+        local cat, _, _ = get_item_category(aass_obj)
+        local new_game_obj = aass_category[cat].spawn_item(aass_obj)
+
+        if not new_game_obj then
+            local stash_name = aass_stashes[box:id()].aass_name
+            aass_debug("Failed to spawn item = %s from stash = %s !!!", aass_obj:section(), stash_name)
+        end
+        -- Clear AASS Item entry for aass_stashes table
+        local aass_stash = aass_stashes[box:id()]
+        local aass_vid = aass_obj:id()
+        aass_stash.aass_data[aass_vid] = nil -- Clear Entry
+        aass_stash.aass_used_vid[cat] = aass_vid -- Save Used VID
+    end
+end
+
+function put_item_in_aass_stash(box,game_obj)
+    local kind = SYS_GetParam(0, game_obj:section(), "kind")
+    -- We skip quest items and store it as vanilla object
+    if not (box and game_obj) and kind == "i_quest" then return end
+    if is_aass(box) then
+        local aass_stash_name = aass_stashes[box:id()].aass_name
+        aass_debug("Adding Item = %s to AASS Stash = %s", game_obj:section(), aass_stash_name)
+        aass_store_new_item(game_obj,box:id())
+        -- Release Game Object from simulation
+        alife_release_id(game_obj:id())
+    end
+end
+
+-- Manage Player Created Stashes and create new entry in aass_data
+function add_stash_to_aass()
+    -- Load saved player created stashes
+    local m_data = alife_storage_manager.get_state()
+
+    for stash_id, section in pairs(m_data.player_created_stashes) do
+        if not aass_stashes[stash_id] then
+            -- Placehlolder Name
+            local stash_name = section .. stash_id
+            aass_debug("New Stash Added = %s | ID = %d", stash_name,stash_id)
+            aass_stashes[stash_id] = create_aass_stash_entry(stash_name)
+        end
+    end
+end
+
+function remove_stash_from_aass()
+    local m_data = alife_storage_manager.get_state()
+
+    for stash_id, stash_data in pairs(aass_stashes) do
+        if not m_data.player_created_stashes[stash_id] then
+            aass_debug("Removing Stash = %s | ID = %d", stash_data.aass_name,stash_id)
+            aass_stashes[stash_id] = nil
+        end
+    end
+end
+
+function on_game_start()
+    RegisterScriptCallback("actor_on_stash_create", add_stash_to_aass)
+    RegisterScriptCallback("actor_on_stash_remove", remove_stash_from_aass)
+    RegisterScriptCallback("actor_on_item_take_from_box",take_item_from_aass_stash)
+	RegisterScriptCallback("actor_on_item_put_in_box",put_item_in_aass_stash)
 end

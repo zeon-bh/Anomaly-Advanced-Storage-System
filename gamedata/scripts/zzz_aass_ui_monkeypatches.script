@@ -1,0 +1,143 @@
+[[-- 
+    Monkey Patches for ui_inventory and utils_item
+    Author: Z30n_bh
+    Date: 08-06-2025
+--]]
+
+--------------------------------------------------------------------------------
+--- AASS Init Intercept when starting Loot Mode, Enable AASS_MODE
+--------------------------------------------------------------------------------
+
+function ui_inventory.UIInventory:LMode_Init(obj)
+	self:Print(nil, "LMode_Init | obj: %s", obj and obj:name())
+
+	-- Enable AASS only when opening player created stashes
+	if is_aass(obj:id()) then 
+		aass_main.aass_debug("AASS Stash found, Enabling AASS Mode...")
+		AASS_MODE = true 
+	end
+
+	self.mode = "loot"
+	
+	-- Show/Hide needed elements
+	self:Reset(obj)
+
+	-- We need this because box can spawn items after opening, so they don't update those instantly
+	if self.npc_is_box and (not self.box_init_update.state) then
+		self.box_init_update.tg = time_global()
+		self.box_init_update.state = true
+		self:LMode_ResetInventories(true)
+		return
+	end
+	self.box_init_update.state = false
+
+	-- Update inventories
+	self:LMode_ResetInventories()
+	
+	-- Update info
+	self:UpdateInfo(true)
+	
+	-- Known info (Special case for corpses)
+	self:LMode_TransferInfo(obj)
+	
+	-- Sound effect
+	self:PlaySND(snd_open)
+end
+
+--------------------------------------------------------------------------------
+--- Monkey Patching for ui_inventory.UIInventory:ParseInventory
+--------------------------------------------------------------------------------
+
+-- Saves the ParseInventory Function, to avoid conflict with other mods like Looting Takes Time
+local orig_ParseInventory = ui_inventory.UIInventory.ParseInventory
+function ui_inventory.UIInventory:ParseInventory(npc, all, id_list, ignore_kind)
+
+	-- Check to make sure npc is a box and is an aass stash
+	if npc and self.npc_is_box and AASS_MODE and aass_main.is_aass(box_id) then
+		local inv = {}
+		local size_c = 0
+		local pkind = self.possible_kind
+		local sec, kind, w, h
+		local function iterate(owner,obj)
+			sec = obj:section()
+			kind = SYS_GetParam(0,sec,"kind") or "na"
+			
+			-- Parsing for kinds, according to sorter
+			if ignore_kind or pkind["s_all"] or pkind[kind] then
+				if id_list then
+					inv[obj:id()] = obj
+				else
+					size_c = size_c + 1
+					inv[size_c] = obj
+				end
+			end
+		end
+
+		-- Maybe change this logic later since we already know it's a Invbox
+		if self:IsInvOwner(npc) then
+			if all then
+				npc:iterate_inventory(iterate,nil)
+			else
+				npc:iterate_ruck(iterate,nil)
+			end
+		elseif npc and self.npc_is_box then
+			-- i_quest items that are not added to the aass table
+			npc:iterate_inventory_box(iterate,nil)
+
+			-- AASS Intercept when opening player created stash
+			local box_id = npc:id()
+			local aass_stash_items = aass_main.parse_aass_items(box_id)
+			size_c = 0
+			for vid, aass_obj in pairs(aass_stash_items) do
+				if id_list then
+					inv[vid] = aass_obj
+				else
+					size_c = size_c + 1
+					inv[size_c] = aass_obj
+				end
+			end
+		end
+		return inv
+	else
+		return orig_ParseInventory(npc, all, id_list, ignore_kind)
+	end
+end
+
+--------------------------------------------------------------------------------
+--- AASS Init Intercept when starting Loot Mode, Enable AASS_MODE
+--------------------------------------------------------------------------------
+
+function ui_inventory.UIInventory:Close()
+	self:Print(nil, "Close")
+	
+	-- Sound effect
+	self:PlaySND(snd_close)
+	
+	self:HideDialog()
+	self:Show(false)
+	
+	change_last_mode(0)
+
+	-- Disable AASS Mode
+	if AASS_MODE then 
+		aass_main.aass_debug("Disabling AASS Mode...")
+		AASS_MODE = false 
+	end
+
+	Unregister_UI("UIInventory")
+end
+
+
+
+--- MonkeyPatch for level.object_by_id
+--- Very Risky Patch, I don't like this one but saves patching more than 7 other functions in ui_utils
+--- Just a wrapper function for level.object_by_id
+
+local orig_object_by_id = level.object_by_id
+function level.object_by_id(id)
+	if AASS_MODE and aass_main.is_aass_obj(id) then
+		return aass_main.create_aass_from_id(id)
+	end
+
+	return orig_object_by_id(id)
+end
