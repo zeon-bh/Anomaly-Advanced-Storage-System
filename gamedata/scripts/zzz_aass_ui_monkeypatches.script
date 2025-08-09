@@ -13,9 +13,12 @@ function ui_inventory.UIInventory:LMode_Init(obj)
 	self:Print(nil, "LMode_Init | obj: %s", obj and obj:name())
 
 	-- Enable AASS only when opening player created stashes
-	if aass_main.is_aass(obj:id()) then 
+	if aass_main.is_aass_stash(obj:id()) then
+		local box_id = obj:id()
 		aass_main.aass_debug("AASS Stash found, Enabling AASS Mode...")
-		AASS_MODE = true 
+		aass_main.aass_update_working_stash(box_id)
+		--aass_main.aass_generate_inventory(box_id)
+		AASS_MODE = true
 	end
 
 	self.mode = "loot"
@@ -49,13 +52,11 @@ end
 --- Monkey Patching for ui_inventory.UIInventory:ParseInventory
 --------------------------------------------------------------------------------
 
--- Saves the ParseInventory Function, to avoid conflict with other mods like Looting Takes Time
+-- Saves the ParseInventory Function, to avoid conflict with other mods like, Looting Takes Time
 local orig_ParseInventory = ui_inventory.UIInventory.ParseInventory
 function ui_inventory.UIInventory:ParseInventory(npc, all, id_list, ignore_kind)
 
-	-- Check to make sure npc is a box and is an aass stash
-	if npc and self.npc_is_box and AASS_MODE and aass_main.is_aass(npc:id()) then
-		aass_main.aass_debug("Starting inventory parsing...")
+	if AASS_MODE then
 		local inv = {}
 		local size_c = 0
 		local pkind = self.possible_kind
@@ -75,7 +76,6 @@ function ui_inventory.UIInventory:ParseInventory(npc, all, id_list, ignore_kind)
 			end
 		end
 
-		-- Maybe change this logic later since we already know it's a Invbox
 		if self:IsInvOwner(npc) then
 			if all then
 				npc:iterate_inventory(iterate,nil)
@@ -83,31 +83,39 @@ function ui_inventory.UIInventory:ParseInventory(npc, all, id_list, ignore_kind)
 				npc:iterate_ruck(iterate,nil)
 			end
 		elseif npc and self.npc_is_box then
-			-- i_quest items that are not added to the aass table
-			npc:iterate_inventory_box(iterate,nil)
+			-- Here npc is an AASS stash box
+			npc:iterate_inventory_box(iterate,nil) -- to get quest items stored as normal game objects
 
-			-- AASS Intercept when opening player created stash
 			aass_main.aass_debug("Generating AASS objects from table data...")
 			local box_id = npc:id()
-			local aass_stash_items = aass_main.parse_aass_items(box_id)
+			aass_main.aass_generate_inventory(box_id) -- Update the inventory table
 			size_c = 0
-			for vid, aass_obj in pairs(aass_stash_items) do
-				if id_list then
-					inv[vid] = aass_obj
-				else
-					size_c = size_c + 1
-					inv[size_c] = aass_obj
+
+			-- Iterate through aass_inventory and parse
+			for vid, aass_obj in pairs(aass_main.aass_inventory) do
+				sec = aass_obj:section()
+				kind = SYS_GetParam(0,sec,"kind") or "na"
+					
+				-- Parsing for kinds, according to sorter
+				if ignore_kind or pkind["s_all"] or pkind[kind] then
+					if id_list then
+						inv[vid] = aass_obj
+					else
+						size_c = size_c + 1
+						inv[size_c] = aass_obj
+					end
 				end
 			end
 		end
-		return inv
+		
+		return inv -- inv contains both game objects and AASSItem objects
 	else
 		return orig_ParseInventory(self, npc, all, id_list, ignore_kind)
 	end
 end
 
 --------------------------------------------------------------------------------
---- AASS Init Intercept when starting Loot Mode, Enable AASS_MODE
+--- UIInventory:Close() Patch, Store the game objects and disable AASS Mode
 --------------------------------------------------------------------------------
 
 function ui_inventory.UIInventory:Close()
@@ -121,26 +129,75 @@ function ui_inventory.UIInventory:Close()
 	
 	ui_inventory.change_last_mode(0)
 
-	-- Disable AASS Mode
+	-- Save all the items in AASS buffer and release the game objects
 	if AASS_MODE then 
 		aass_main.aass_debug("Disabling AASS Mode...")
+		aass_main.aass_save_new_items()
 		AASS_MODE = false 
 	end
 
 	Unregister_UI("UIInventory")
 end
 
+local orig_Action_Move = ui_inventory.UIInventory.Action_Move
+function ui_inventory.UIInventory:Action_Move(obj, bag)
+	obj = self:CheckItem(obj,"Action_Move")
+	
+	if AASS_MODE then
+		local npc = self.npc_id and get_object_by_id(self.npc_id)
+		if (not npc) then
+			return
+		end
+		
+		if (bag == "actor_bag") or (bag == "actor_equ") then
+			-- Storing items into AASS Stash
+			self:On_Item_Exchange(db.actor, npc, obj)
+			aass_main.aass_update_stash_buffer(obj)
+			SendScriptCallback("ActorMenu_on_item_after_move", self.npc_id, obj, self.mode, self.bag_id[bag])
+		elseif (bag == "npc_bag") then
+			-- Taking items from AASS Stash -- Special case if item still in buffer and not AASS Item
+			if not aass_main.is_aass_item(obj,true) then
+				self:On_Item_Exchange(npc, db.actor, obj)
+				aass_main.aass_update_stash_buffer(obj)
+				SendScriptCallback("ActorMenu_on_item_after_move", self.npc_id, obj, self.mode, self.bag_id[bag])
+			else
+				-- Transferring AASS Item from stash to Actor
+				local box_id = self.npc_id
+				local aass_obj = obj
+				local new_obj_id = aass_main.aass_spawn_item_to_inventory(box_id,aass_obj) -- This returns a reference to the spawned obj
+				--obj = get_object_by_id(new_obj_id.id)
+				--obj = self:CheckItem(new_obj_id,"Action_Move")
+				--aass_main.aass_debug("Return OBJ = %s, ID = %s", obj:section(),obj:id())
+			end
+		end
+
+		self:On_Item_Update()
+	else
+		return orig_Action_Move(self, obj, bag)
+	end
+end
+
 
 
 --- MonkeyPatch for level.object_by_id
---- Very Risky Patch, I don't like this one but saves patching more than 7 other functions in ui_utils
+--- I don't like this one but saves patching more than 7 other functions in ui_utils
 --- Just a wrapper function for level.object_by_id
 
 local orig_object_by_id = level.object_by_id
 function level.object_by_id(id)
-	if AASS_MODE and aass_main.is_aass_item(id) then
-		return aass_main.create_aass_from_id(id)
+	if AASS_MODE and aass_main.is_aass_item(id,false) then
+		return aass_main.aass_inventory[id]
 	end
 
 	return orig_object_by_id(id)
+end
+
+--- _G.alife_object monkeypatch, this is just a simple wrapper
+local orig_alife_object = _G.alife_object
+function _G.alife_object(id)
+	if AASS_MODE and aass_main.is_aass_item(id,false) then
+		return aass_main.aass_inventory[id]
+	else
+		return orig_alife_object(id)
+	end
 end
